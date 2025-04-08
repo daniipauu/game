@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Isaac: Pau's Version</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #111;
+      color: #fff;
+      font-family: 'Press Start 2P', monospace;
+    }
+    canvas {
+      display: block;
+      background: #222;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 14px;
+    }
+    #mensaje, #derrota, #inicio {
+      position: absolute;
+      top: 35%;
+      width: 100%;
+      text-align: center;
+      font-size: 1.5em;
+      background: rgba(0,0,0,0.7);
+      padding: 20px;
+      display: none;
+    }
+    #selectorDificultad {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-top: 15px;
+    }
+    button {
+      font-family: 'Press Start 2P', monospace;
+      padding: 10px;
+      background: #333;
+      border: 2px solid #fff;
+      color: orange;
+      cursor: pointer;
+    }
+    #vidas {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="inicio">
+    <h2>Isaac: Pau's Version</h2>
+    <p>Pau wakes up in a dark basement... she must collect the hearts before the creatures of fear reach her.</p>
+    <div id="selectorDificultad">
+      <button onclick="iniciarJuego('facil')">Easy</button>
+      <button onclick="iniciarJuego('medio')">More or less easy</button>
+      <button onclick="iniciarJuego('dificil')">Definitely not easy</button>
+    </div>
+  </div>
+
+  <div id="ui">
+    <div>Time: <span id="tiempo">0</span>s</div>
+    <div id="vidas">Lives: <span id="vidasNum">3</span></div>
+  </div>
+
+  <div id="mensaje">¡You made it Nico Nico Ni, yayyy "No creature can withstand your fury."</div>
+  <div id="derrota">You have been defeated... but you will come back stronger.</div>
+
+  <audio id="musica" src="https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Kevin_MacLeod/Horror_Special/Kevin_MacLeod_-_Echoes_of_Time_v2.mp3" autoplay loop></audio>
+  <audio id="pickup" src="https://freesound.org/data/previews/341/341695_626088-lq.mp3"></audio>
+  <audio id="explosion" src="https://freesound.org/data/previews/67/67493_528748-lq.mp3"></audio>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const pickupSound = document.getElementById("pickup");
+    const explosionSound = document.getElementById("explosion");
+
+    let jugador = { x: 100, y: 100, w: 40, h: 40, speed: 5 };
+    let corazones = [];
+    let enemigos = [];
+    let vidas = 3;
+    let recolectados = 0;
+    const total = 5;
+    let tiempo = 0;
+    let dificultad = "facil";
+    let jugando = false;
+
+    let efectosColision = [];
+    let frases = [
+      "¡You can do it precioso!",
+      "You are closer to the end...",
+      "The challenge grows, but Nico never gives up. Thanks for playing handsome",
+    ];
+    let fraseActual = 0;
+
+    const keys = {};
+    document.addEventListener("keydown", e => keys[e.key] = true);
+    document.addEventListener("keyup", e => keys[e.key] = false);
+
+    function moverJugador() {
+      if (keys["ArrowUp"]) jugador.y -= jugador.speed;
+      if (keys["ArrowDown"]) jugador.y += jugador.speed;
+      if (keys["ArrowLeft"]) jugador.x -= jugador.speed;
+      if (keys["ArrowRight"]) jugador.x += jugador.speed;
+    }
+
+    function detectarColision(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function crearCorazon() {
+      return {
+        x: Math.random() * (canvas.width - 30),
+        y: Math.random() * (canvas.height - 30),
+        w: 30, h: 30
+      };
+    }
+
+    function crearEnemigo() {
+      return {
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        w: 40, h: 40,
+        dx: (Math.random() - 0.5) * 5,
+        dy: (Math.random() - 0.5) * 5
+      };
+    }
+
+    function crearEfectoColision(x, y) {
+      return {
+        x: x,
+        y: y,
+        size: 20,
+        life: 10
+      };
+    }
+
+    function iniciarJuego(nivel) {
+      dificultad = nivel;
+      document.getElementById("inicio").style.display = "none";
+      jugando = true;
+      recolectados = 0;
+      corazones = Array.from({ length: total }, crearCorazon);
+      enemigos = Array.from({ length: nivel === 'facil' ? 6 : nivel === 'medio' ? 8 : 10 }, crearEnemigo);
+      jugador.speed = nivel === 'facil' ? 7 : nivel === 'medio' ? 6 : 5;
+      vidas = 3;
+      tiempo = 0;
+      document.getElementById("mensaje").style.display = "none";
+      document.getElementById("derrota").style.display = "none";
+      mostrarFrase();
+      actualizar();
+    }
+
+    function mostrarFrase() {
+      if (fraseActual < frases.length) {
+        document.getElementById("mensaje").textContent = frases[fraseActual];
+        fraseActual++;
+      } else {
+        document.getElementById("mensaje").textContent = "";
+      }
+
+      setTimeout(() => {
+        document.getElementById("mensaje").style.display = "none";
+      }, 3000);
+    }
+
+    function actualizar() {
+      if (!jugando) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      moverJugador();
+
+      // Dibuja el jugador como un rectángulo
+      ctx.fillStyle = "orange"; // Color del jugador
+      ctx.fillRect(jugador.x, jugador.y, jugador.w, jugador.h);
+
+      // Dibuja los corazones
+      corazones.forEach((c, i) => {
+        ctx.fillStyle = "red"; // Color de los corazones
+        ctx.fillRect(c.x, c.y, c.w, c.h);
+        if (detectarColision(jugador, c)) {
+          pickupSound.play();
+          corazones.splice(i, 1);
+          recolectados++;
+        }
+      });
+
+      // Dibuja los enemigos (ahora en color verde)
+      enemigos.forEach(e => {
+        e.x += e.dx;
+        e.y += e.dy;
+        if (e.x < 0 || e.x + e.w > canvas.width) e.dx *= -1;
+        if (e.y < 0 || e.y + e.h > canvas.height) e.dy *= -1;
+        ctx.fillStyle = "green"; // Color de los enemigos (verde)
+        ctx.fillRect(e.x, e.y, e.w, e.h);
+
+        if (detectarColision(jugador, e)) {
+          explosionSound.play();
+          efectosColision.push(crearEfectoColision(jugador.x, jugador.y));
+          vidas--;
+          e.x = Math.random() * canvas.width;
+          e.y = Math.random() * canvas.height;
+          if (vidas <= 0) perder();
+        }
+      });
+
+      // Dibuja los efectos de colisión
+      efectosColision.forEach((efecto, i) => {
+        ctx.fillStyle = "red";
+        ctx.beginPath();
+        ctx.arc(efecto.x, efecto.y, efecto.size, 0, Math.PI * 2);
+        ctx.fill();
+        efecto.size -= 1;
+        efecto.life -= 1;
+        if (efecto.life <= 0) efectosColision.splice(i, 1);
+      });
+
+      if (recolectados >= total) ganar();
+
+      document.getElementById("vidasNum").textContent = vidas;
+      document.getElementById("tiempo").textContent = tiempo;
+      requestAnimationFrame(actualizar);
+    }
+
+    function ganar() {
+      document.getElementById("mensaje").style.display = "block";
+      jugando = false;
+      // Si el jugador ha terminado el nivel, pasa al siguiente
+      if (dificultad === "facil") {
+        setTimeout(() => iniciarJuego("medio"), 2000);
+      } else if (dificultad === "medio") {
+        setTimeout(() => iniciarJuego("dificil"), 2000);
+      }
+    }
+
+    function perder() {
+      document.getElementById("derrota").style.display = "block";
+      jugando = false;
+    }
+
+    setInterval(() => {
+      if (jugando) tiempo++;
+    }, 1000);
+
+    window.onload = () => {
+      document.getElementById("inicio").style.display = "block";
+    };
+  </script>
+</body>
+</html>
